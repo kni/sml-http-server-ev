@@ -54,16 +54,31 @@ local
   fun doHeaders [] = ""
     | doHeaders headers = (String.concatWith "\r\n" (List.map (fn (a, b) => (a ^ ": " ^ b)) headers)) ^ "\r\n"
 
-  fun doResponseSimple socket (code, headers, body) = (write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^ (doHeaders headers) ^ "\r\n" ^ body) ; () )
+  fun doResponseSimple socket (code, headers, body) =
+    let
+      val contentLength = String.size body
+    in
+      write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
+        (doHeaders headers) ^
+        "Content-Length: " ^ (Int.toString contentLength) ^ "\r\n" ^
+        "\r\n" ^
+        body
+      );
+      ()
+    end
 
 in
   fun doResponse socket (ResponseSimple (code, headers, body)) = doResponseSimple socket (code, headers, body)
     | doResponse socket (ResponseDelayed f) = f (doResponseSimple socket)
     | doResponse socket (ResponseStream f) =
       let
+        fun doWrite t = let val length = String.size t in write socket ((Int.fmt StringCvt.HEX length) ^ "\r\n" ^ t ^ "\r\n"); () end
+
+        fun doClose () = (write socket "0\r\n\r\n" ; ())
+
         fun doit (code, headers) = (
-            write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^ (doHeaders headers) ^ "\r\n");
-            ((fn b => (write socket b; ())), (fn () => ()))
+            write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^ (doHeaders headers) ^ "Transfer-Encoding: chunked\r\n" ^ "\r\n");
+            (doWrite, doClose)
           )
       in
         f doit
