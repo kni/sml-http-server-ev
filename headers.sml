@@ -53,8 +53,8 @@ fun parse t = case getHeaders t of NONE => NONE | SOME (hs, body) =>
         (Substring.string f, Substring.string (droplSpace t))
       end
 
+    val hs = List.map (fn h => let val (k, v) = split #":" h in ((String.map Char.toLower k), v) end) hs
 
-    val hs = List.map (split #":") hs
     val (path, query) = split #"?" uri
   in
     SOME (method, uri, path, query, protocol, hs, body)
@@ -86,7 +86,7 @@ val _ = print "-----\n"
 
 val t = "GET /foo HTTP/1.1\r\nHost: server.com\r\nAccept: */*\r\n\r\nBODY\r\n"
 val r = parse t
-val _ = if r = SOME ("GET", "/foo", "/foo", "", "HTTP/1.1", [("Host", "server.com"), ("Accept", "*/*")], "BODY\r\n") then print "OK\n" else print "ERROR\n"
+val _ = if r = SOME ("GET", "/foo", "/foo", "", "HTTP/1.1", [("host", "server.com"), ("accept", "*/*")], "BODY\r\n") then print "OK\n" else print "ERROR\n"
 val _ = print "-----\n"
 val _ = case r of NONE => print "NONE\n" | SOME (method, uri, path, query, protocol, hs, body) => (
     print (method ^ " " ^ uri ^ " " ^ protocol ^ "\n");
