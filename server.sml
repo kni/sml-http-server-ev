@@ -71,17 +71,29 @@ in
 end
 
 
+fun findPairValue _ [] = NONE
+  | findPairValue x ((k,v)::ks) = if k = x then SOME v else findPairValue x ks
+
+
 exception HttpBadRequest
 
 fun run (Settings settings) =
   let
-
 
     val timeout = #timeout settings
     val logger  = #logger  settings
 
     fun handler socket =
       let
+
+        fun readContent socket cl buf =
+          let
+            val s = String.size buf
+          in
+            if cl <= s
+            then String.substring (buf, cl, s - cl)
+            else (case read socket of "" => raise HttpBadRequest | buf => readContent socket (cl - s) buf)
+          end
 
         fun doit buf =
           case HttpHeaders.parse buf of
@@ -97,22 +109,21 @@ fun run (Settings settings) =
                      headers        = headers
                    }
 
+                   val contentLength = findPairValue "content-length" headers
+                   val buf = case contentLength of NONE => (print "contentLength is NONE\n"; buf) | SOME cl => (
+                       print ("contentLength is " ^ cl ^ "\n");
+                       case Int.fromString cl of NONE => raise HttpBadRequest | SOME cl => (
+                       readContent socket cl buf
+                     ))
+
+                   val _ = print ("buf size is " ^ (Int.toString (String.size buf)) ^ "\n") (* ToDo *)
+
                    val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
                  in
                    doResponse socket res;
                    doit buf
                  end
 
-        (*
-        val serverAddr = Socket.Ctl.getSockName socket
-        val remoteAddr = Socket.Ctl.getPeerName socket
-        val (s_in_addr, s_port) = INetSock.fromAddr serverAddr
-        val (r_in_addr, r_port) = INetSock.fromAddr remoteAddr
-        val s_host = NetHostDB.toString s_in_addr;
-        val r_host = NetHostDB.toString r_in_addr;
-        val _ = print ("S: " ^ s_host ^ " " ^ (Int.toString s_port) ^ "\n")
-        val _ = print ("R: " ^ r_host ^ " " ^ (Int.toString r_port) ^ "\n")
-        *)
       in
         logger "HELLO, socket.";
         doit "" handle HttpBadRequest => doResponse socket (ResponseSimple ("400", [], "Bad Request\r\n")) | exc => raise exc;
