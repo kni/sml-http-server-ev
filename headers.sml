@@ -35,7 +35,8 @@ fun getHeaders t =
   end
 
 
-fun parse t = case getHeaders t of NONE => NONE | SOME (hs, body) =>
+fun parse "" = NONE
+  | parse t = case getHeaders t of NONE => NONE | SOME (hs, body) =>
   let
     val fl = hd hs
     val hs = tl hs

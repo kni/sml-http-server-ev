@@ -34,21 +34,6 @@ val chunksize = 64 * 1024
 fun read socket = Byte.bytesToString(Socket.recvVec (socket, chunksize))
 fun write socket text = Socket.sendVec (socket, Word8VectorSlice.full (Byte.stringToBytes text))
 
-fun readHendlers socket =
-  let
-    fun doit t =
-      let
-        val t = t ^ (read socket)
-      in
-        case HttpHeaders.parse t of
-             NONE => doit t
-           | SOME r => r
-      end
-  in
-    doit ""
-  end
-
-
 local
 
   fun doHeaders [] = ""
@@ -86,6 +71,8 @@ in
 end
 
 
+exception HttpBadRequest
+
 fun run (Settings settings) =
   let
 
@@ -95,23 +82,26 @@ fun run (Settings settings) =
 
     fun handler socket =
       let
-        fun doit () =
-          let
-            val (method, uri, path, query, protocol, headers, body) = readHendlers socket
-            (* ToDo read body tail *)
-            val env = Env {
-              requestMethod  = method,
-              requestURI     = uri,
-              pathInfo       = path,
-              queryString    = query,
-              serverProtocol = protocol,
-              headers        = headers
-            }
-            val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
-          in
-            doResponse socket res;
-            ()
-          end
+
+        fun doit buf =
+          case HttpHeaders.parse buf of
+               NONE => (case read socket of "" => () | b => doit (buf ^ b))
+             | SOME (method, uri, path, query, protocol, headers, buf) =>
+                 let
+                   val env = Env {
+                     requestMethod  = method,
+                     requestURI     = uri,
+                     pathInfo       = path,
+                     queryString    = query,
+                     serverProtocol = protocol,
+                     headers        = headers
+                   }
+
+                   val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
+                 in
+                   doResponse socket res;
+                   doit buf
+                 end
 
         (*
         val serverAddr = Socket.Ctl.getSockName socket
@@ -125,7 +115,7 @@ fun run (Settings settings) =
         *)
       in
         logger "HELLO, socket.";
-        doit ();
+        doit "" handle HttpBadRequest => doResponse socket (ResponseSimple ("400", [], "Bad Request\r\n")) | exc => raise exc;
         logger "BY, socket.";
         Socket.close socket
       end

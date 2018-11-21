@@ -1,7 +1,7 @@
 (*
-curl -D - 'http://localhost:8080/simple?a=b
-curl -D - 'http://localhost:8080/delayed?a=b'
-curl -D - 'http://localhost:8080/stream?a=b'
+curl -D - 'http://localhost:5000/simple?a=b'
+curl -D - 'http://localhost:5000/delayed?a=b'
+curl -D - 'http://localhost:5000/stream?a=b'
 *)
 
 fun logger msg = print ((Date.fmt "%Y-%m-%d %H:%M:%S" (Date.fromTimeUniv(Time.now()))) ^ "\t" ^ msg ^ "\n")
@@ -34,7 +34,7 @@ fun handler (HttpServer.Env env) =
 
 val settings = HttpServer.Settings {
   handler      = handler,
-  port         = 8080,
+  port         = 5000,
   host         = "*",
   accept_queue = 10,
   workers      = 0,
