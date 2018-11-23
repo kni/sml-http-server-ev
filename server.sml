@@ -77,6 +77,10 @@ fun findPairValue _ [] = NONE
 
 exception HttpBadRequest
 
+
+
+
+
 fun run (Settings settings) =
   let
 
@@ -94,6 +98,11 @@ fun run (Settings settings) =
             then String.substring (buf, cl, s - cl)
             else (case read socket of "" => raise HttpBadRequest | buf => readContent socket (cl - s) buf)
           end
+
+
+        fun readChunkes socket buf = HttpChunks.readChunkes read socket buf
+          handle HttpChunks.HttpBadChunks => raise HttpBadRequest | exc => raise exc
+
 
         fun doit buf =
           case HttpHeaders.parse buf of
@@ -116,6 +125,11 @@ fun run (Settings settings) =
                        readContent socket cl buf
                      ))
 
+
+                   val chunked = case findPairValue "transfer-encoding" headers of SOME "chunked" => true | SOME v => ( print ( "XXX " ^ v ^ "\n") ;false) | _ => false
+                   val _ = print ("chunked " ^ (Bool.toString chunked) ^ "\n")
+                   val buf = if chunked then readChunkes socket buf else buf
+
                    val _ = print ("buf size is " ^ (Int.toString (String.size buf)) ^ "\n") (* ToDo *)
 
                    val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
@@ -126,7 +140,10 @@ fun run (Settings settings) =
 
       in
         logger "HELLO, socket.";
-        doit "" handle HttpBadRequest => doResponse socket (ResponseSimple ("400", [], "Bad Request\r\n")) | exc => raise exc;
+        (doit "" handle
+            HttpBadRequest => (doResponse socket (ResponseSimple ("400", [], "Bad Request\r\n")))
+          | OS.SysErr (msg,  SOME ECONNRESET) => logger ("ERROR ECONNRESET: " ^ msg ^ "\n")
+          | exc => raise exc);
         logger "BY, socket.";
         Socket.close socket
       end

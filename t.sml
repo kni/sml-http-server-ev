@@ -2,6 +2,8 @@
 curl -D - 'http://localhost:5000/simple?a=b'
 curl -D - 'http://localhost:5000/delayed?a=b'
 curl -D - 'http://localhost:5000/stream?a=b'
+
+curl -H "Transfer-Encoding: chunked" -d 'a=b' -D - 'http://localhost:5000/simple'
 *)
 
 fun logger msg = print ((Date.fmt "%Y-%m-%d %H:%M:%S" (Date.fromTimeUniv(Time.now()))) ^ "\t" ^ msg ^ "\n")

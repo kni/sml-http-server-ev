@@ -6,6 +6,7 @@ in
 	net-server/server-mlton.sml
 	net-server/server.sml
 	headers.sml
+	chunks.sml
 	server.sml
 	t.sml
 	main.sml
