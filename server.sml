@@ -43,13 +43,18 @@ local
     let
       val contentLength = String.size body
     in
-      write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
-        (doHeaders headers) ^
-        "Content-Length: " ^ (Int.toString contentLength) ^ "\r\n" ^
-        "\r\n" ^
-        body
-      );
-      ()
+      if contentLength = 0
+      then write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
+          (doHeaders headers) ^
+          "\r\n"
+        )
+      else write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
+          (doHeaders headers) ^
+          "Content-Length: " ^ (Int.toString contentLength) ^ "\r\n" ^
+          "\r\n" ^
+          body
+        )
+      ; ()
     end
 
 in
@@ -117,6 +122,12 @@ fun run (Settings settings) =
                      serverProtocol = protocol,
                      headers        = headers
                    }
+
+
+                   val _ = case (method, findPairValue "expect" headers) of
+                       ("POST", SOME "100-continue") => doResponse socket (ResponseSimple ("100 Continue", [], ""))
+                     | _ => ()
+
 
                    val contentLength = findPairValue "content-length" headers
                    val buf = case contentLength of NONE => (print "contentLength is NONE\n"; buf) | SOME cl => (
