@@ -23,6 +23,7 @@ fun getChunkSize t =
 fun readChunkData read socket buf n i =
  let
    val s = String.size buf
+   (* val _ = print ("n=" ^ (Int.toString n) ^ " i=" ^ (Int.toString i) ^ " s=" ^ (Int.toString s) ^ " buf: " ^ buf ^ "\n") *)
  in
    if s >= i + n + 1
    then
@@ -38,15 +39,14 @@ fun readChunkData read socket buf n i =
        )
        else if c = #"\n"
        then String.substring (buf, i + n + 1, s - i - n - 1)
-       else if n = 0
-       then String.substring (buf, i + n, s - i - n) (* it is delete "\r\n" after size *)
+       else if n = 0 then String.substring (buf, i, s - i) (* it is delete "\r\n" after size *)
        else raise HttpBadChunks
      end
    else
      let
        val data = buf
      in
-       case read socket of "" => raise HttpBadChunks | buf => readChunkData read socket buf (n - s) 0
+       case read socket of "" => raise HttpBadChunks | buf => readChunkData read socket buf (n - s + i) 0
      end
  end
 
@@ -70,10 +70,36 @@ end
 
 end
 
-(*
-val socket = "ToDo"
-fun read socket = "ToDo"
-val buf = "6\r\nHellow\r\nA\r\n, Plack!\r\n\r\n0\r\nXXXX\n"
-val buf = HttpChunks.readChunkes read socket buf
-val _ = print buf
-*)
+
+fun test () =
+  let
+
+    fun test chunks tail =
+      let
+        val bufs = ref chunks
+        val socket = "ToDo"
+
+        fun read socket =
+          let
+            val buf = hd (!bufs)
+          in
+            bufs := tl (!bufs);
+            buf
+          end
+
+        val buf = HttpChunks.readChunkes read socket ""
+      in
+        if buf = tail then print "OK\n" else print "ERROR\n"
+      end
+
+
+  in
+    test ["0\r\n\r\n"] "";
+    test ["6\r\n", "Hellow\r\n", "0\r\n\r\n"] "";
+    test ["6\r\n", "Hell", "ow\r\n", "0\r\n\r\n", ""] "";
+    test ["6\r\nHellow\r\n", "A\r\n, Plack!\r\n\r\n", "0\r\n\r\n", "", ""] "";
+    test ["6\r\nHellow\r\nA\r\n, Plack!\r\n\r\n0\r\n\r\nXXXX\n"] "XXXX\n";
+    ()
+  end
+
+(* val _ = test () *)

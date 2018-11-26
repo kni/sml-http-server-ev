@@ -7,7 +7,9 @@ curl -H "Transfer-Encoding: chunked" -d 'a=b' -D - 'http://localhost:5000/simple
 
 curl -H "Transfer-Encoding: chunked" -d 'a=b' -D - 'http://localhost:5000/simple' -: -d 'a=b' -D - 'http://localhost:5000/stream'
 
-curl -d @/etc/passwd -D - 'http://localhost:5000/simple'
+curl --data-binary @/etc/services -H "Transfer-Encoding: chunked" -D - 'http://localhost:5000/stream'
+
+curl --data-binary "a=b" -H "Transfer-Encoding: chunked" 'http://localhost:5000/simple' -: 'http://localhost:5000/simple' -: -d 'a=b' 'http://localhost:5000/stream'
 
 *)
 

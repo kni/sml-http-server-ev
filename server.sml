@@ -141,7 +141,7 @@ fun run (Settings settings) =
                    val _ = print ("chunked " ^ (Bool.toString chunked) ^ "\n")
                    val buf = if chunked then readChunkes socket buf else buf
 
-                   val _ = print ("buf size is " ^ (Int.toString (String.size buf)) ^ "\n") (* ToDo *)
+                   val _ = print ("buf size is " ^ (Int.toString (String.size buf)) ^ ": " ^ buf ^ "\n") (* ToDo *)
 
                    val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
                  in
