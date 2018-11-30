@@ -14,7 +14,7 @@ datatype Env = Env of {
 datatype Response =
     ResponseSimple  of   string * (string * string) list * string
   | ResponseDelayed of ((string * (string * string) list * string) -> unit) -> unit
-  | ResponseStream  of ((string * (string * string) list) -> ((string -> unit) * (unit -> unit))) -> unit
+  | ResponseStream  of ((string * (string * string) list) -> (string -> unit)) -> unit
 
 
 datatype settings = Settings of {
@@ -31,8 +31,24 @@ datatype settings = Settings of {
 
 
 val chunksize = 64 * 1024
+
 fun read socket = Byte.bytesToString(Socket.recvVec (socket, chunksize))
-fun write socket text = Socket.sendVec (socket, Word8VectorSlice.full (Byte.stringToBytes text))
+
+fun write socket text =
+  let
+    val data = Word8VectorSlice.full (Byte.stringToBytes text)
+
+    fun doit data =
+      let
+        val n = Socket.sendVec (socket, data)
+      in
+        if n = Word8VectorSlice.length data then () else
+        doit (Word8VectorSlice.subslice (data, n, NONE))
+      end
+  in
+    doit data
+  end
+
 
 local
 
@@ -62,13 +78,17 @@ in
     | doResponse socket (ResponseDelayed f) = f (doResponseSimple socket)
     | doResponse socket (ResponseStream f) =
       let
-        fun doWrite t = let val length = String.size t in write socket ((Int.fmt StringCvt.HEX length) ^ "\r\n" ^ t ^ "\r\n"); () end
-
-        fun doClose () = (write socket "0\r\n\r\n" ; ())
+        fun writer t =
+          let
+            val length = String.size t
+         in
+           if length = 0 then write socket "0\r\n\r\n" else
+           write socket ((Int.fmt StringCvt.HEX length) ^ "\r\n" ^ t ^ "\r\n")
+         end
 
         fun doit (code, headers) = (
             write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^ (doHeaders headers) ^ "Transfer-Encoding: chunked\r\n" ^ "\r\n");
-            (doWrite, doClose)
+            writer
           )
       in
         f doit

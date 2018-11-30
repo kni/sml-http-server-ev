@@ -30,11 +30,11 @@ fun handler (HttpServer.Env env) =
       | "/stream"  => HttpServer.ResponseStream (fn responder =>
           let
             (* ... *)
-            val (write, close) = responder ("200 OK", [("a", "b")])
+            val writer = responder ("200 OK", [("a", "b")])
           in
-            write "Hello!";
-            write " Stream.\r\n";
-            close ()
+            writer "Hello!";
+            writer " Stream.\r\n";
+            writer ""
           end
         )
       | _ => HttpServer.ResponseSimple ("200 OK", [], "Hello!\r\n")
