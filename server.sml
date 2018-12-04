@@ -61,10 +61,12 @@ local
     in
       if contentLength = 0
       then write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
+          (* "Connection: keep-alive\r\n" ^ *)
           (doHeaders headers) ^
           "\r\n"
         )
       else write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
+          (* "Connection: keep-alive\r\n" ^ *)
           (doHeaders headers) ^
           "Content-Length: " ^ (Int.toString contentLength) ^ "\r\n" ^
           "\r\n" ^
@@ -87,7 +89,12 @@ in
          end
 
         fun doit (code, headers) = (
-            write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^ (doHeaders headers) ^ "Transfer-Encoding: chunked\r\n" ^ "\r\n");
+            write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
+              (* "Connection: keep-alive\r\n" ^ *)
+              (doHeaders headers) ^
+              "Transfer-Encoding: chunked\r\n" ^
+              "\r\n"
+            );
             writer
           )
       in
@@ -157,16 +164,20 @@ fun run (Settings settings) =
                      ))
 
 
-                   val chunked = case findPairValue "transfer-encoding" headers of SOME "chunked" => true | SOME v => ( print ( "XXX " ^ v ^ "\n") ;false) | _ => false
+                   val chunked = case findPairValue "transfer-encoding" headers of SOME "chunked" => true | _ => false
                    val _ = print ("chunked " ^ (Bool.toString chunked) ^ "\n")
                    val buf = if chunked then readChunkes socket buf else buf
 
+
                    val _ = print ("buf size is " ^ (Int.toString (String.size buf)) ^ ": " ^ buf ^ "\n") (* ToDo *)
+
+                   val connection = findPairValue "connection" headers
+                   val _ = case connection of NONE => () | SOME connection => print ("Connection: " ^ connection ^ "\n")
 
                    val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
                  in
                    doResponse socket res;
-                   doit buf
+                   case connection of SOME "close" => () | _ => doit buf
                  end
 
       in
