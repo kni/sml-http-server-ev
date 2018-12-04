@@ -151,28 +151,30 @@ fun run (Settings settings) =
                    }
 
 
-                   val _ = case (method, findPairValue "expect" headers) of
-                       ("POST", SOME "100-continue") => doResponse socket (ResponseSimple ("100 Continue", [], ""))
-                     | _ => ()
+                   val buf =
+                     if method = "POST" orelse method = "PUT"
+                     then (
+                       if findPairValue "expect" headers = SOME "100-continue"
+                       then doResponse socket (ResponseSimple ("100 Continue", [], "")) else ();
 
+                       case findPairValue "content-length" headers of
+                         SOME cl => (
+                           case Int.fromString cl of
+                               NONE => raise HttpBadRequest
+                             | SOME cl => readContent socket cl buf
+                         )
+                       | NONE => (
+                           if findPairValue "transfer-encoding" headers = SOME "chunked"
+                           then readChunkes socket buf
+                           else buf
+                         )
+                     )
+                     else buf
 
-                   val contentLength = findPairValue "content-length" headers
-                   val buf = case contentLength of NONE => (print "contentLength is NONE\n"; buf) | SOME cl => (
-                       print ("contentLength is " ^ cl ^ "\n");
-                       case Int.fromString cl of NONE => raise HttpBadRequest | SOME cl => (
-                       readContent socket cl buf
-                     ))
-
-
-                   val chunked = case findPairValue "transfer-encoding" headers of SOME "chunked" => true | _ => false
-                   val _ = print ("chunked " ^ (Bool.toString chunked) ^ "\n")
-                   val buf = if chunked then readChunkes socket buf else buf
-
-
-                   val _ = print ("buf size is " ^ (Int.toString (String.size buf)) ^ ": " ^ buf ^ "\n") (* ToDo *)
 
                    val connection = findPairValue "connection" headers
                    val _ = case connection of NONE => () | SOME connection => print ("Connection: " ^ connection ^ "\n")
+
 
                    val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
                  in
