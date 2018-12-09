@@ -55,18 +55,18 @@ local
   fun doHeaders [] = ""
     | doHeaders headers = (String.concatWith "\r\n" (List.map (fn (a, b) => (a ^ ": " ^ b)) headers)) ^ "\r\n"
 
-  fun doResponseSimple socket (code, headers, body) =
+  fun doResponseSimple socket keepAliveHeader (code, headers, body) =
     let
       val contentLength = String.size body
     in
       if contentLength = 0
       then write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
-          (* "Connection: keep-alive\r\n" ^ *)
+          (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
           (doHeaders headers) ^
           "\r\n"
         )
       else write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
-          (* "Connection: keep-alive\r\n" ^ *)
+          (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
           (doHeaders headers) ^
           "Content-Length: " ^ (Int.toString contentLength) ^ "\r\n" ^
           "\r\n" ^
@@ -76,9 +76,9 @@ local
     end
 
 in
-  fun doResponse socket (ResponseSimple (code, headers, body)) = doResponseSimple socket (code, headers, body)
-    | doResponse socket (ResponseDelayed f) = f (doResponseSimple socket)
-    | doResponse socket (ResponseStream f) =
+  fun doResponse socket keepAliveHeader (ResponseSimple (code, headers, body)) = doResponseSimple socket keepAliveHeader (code, headers, body)
+    | doResponse socket keepAliveHeader (ResponseDelayed f) = f (doResponseSimple socket keepAliveHeader)
+    | doResponse socket keepAliveHeader (ResponseStream f) =
       let
         fun writer t =
           let
@@ -90,7 +90,7 @@ in
 
         fun doit (code, headers) = (
             write socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
-              (* "Connection: keep-alive\r\n" ^ *)
+              (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
               (doHeaders headers) ^
               "Transfer-Encoding: chunked\r\n" ^
               "\r\n"
@@ -105,6 +105,10 @@ end
 
 fun findPairValue _ [] = NONE
   | findPairValue x ((k,v)::ks) = if k = x then SOME v else findPairValue x ks
+
+
+fun isPersistent "HTTP/1.0" headers = (case findPairValue "connection" headers of SOME "keep-alive" => (true, true)   | _ => (false, false))
+  | isPersistent protocol   headers = (case findPairValue "connection" headers of SOME "close"      => (false, false) | _ => (true, false))
 
 
 exception HttpBadRequest
@@ -150,12 +154,13 @@ fun run (Settings settings) =
                      headers        = headers
                    }
 
+                   val (persistent, keepAliveHeader) = isPersistent protocol headers
 
                    val buf =
                      if method = "POST" orelse method = "PUT"
                      then (
                        if findPairValue "expect" headers = SOME "100-continue"
-                       then doResponse socket (ResponseSimple ("100 Continue", [], "")) else ();
+                       then doResponse socket keepAliveHeader (ResponseSimple ("100 Continue", [], "")) else ();
 
                        case findPairValue "content-length" headers of
                          SOME cl => (
@@ -171,25 +176,21 @@ fun run (Settings settings) =
                      )
                      else buf
 
-
-                   val connection = findPairValue "connection" headers
-                   val _ = case connection of NONE => () | SOME connection => print ("Connection: " ^ connection ^ "\n")
-
-
                    val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
                  in
-                   doResponse socket res;
-                   case connection of SOME "close" => () | _ => doit buf
+                   doResponse socket keepAliveHeader res;
+                   if persistent then doit buf else ()
                  end
+
 
       in
         logger "HELLO, socket.";
+
         (doit "" handle
-            HttpBadRequest => (doResponse socket (ResponseSimple ("400", [], "Bad Request\r\n")))
+            HttpBadRequest => (doResponse socket false (ResponseSimple ("400", [], "Bad Request\r\n")))
           | OS.SysErr (msg,  SOME ECONNRESET) => logger ("ERROR ECONNRESET: " ^ msg ^ "\n")
           | exc => raise exc);
-        logger "BY, socket.";
-        Socket.close socket
+        logger "BY, socket."
       end
 
   in
