@@ -1,13 +1,15 @@
 structure HttpServer =
 struct
 
-datatype Env = Env of {
-  requestMethod  : string,
-  requestURI     : string,
-  pathInfo       : string,
-  queryString    : string,
-  serverProtocol : string,
-  headers        : (string * string) list
+datatype ('c, 'd) Env = Env of {
+  requestMethod   : string,
+  requestURI      : string,
+  pathInfo        : string,
+  queryString     : string,
+  serverProtocol  : string,
+  headers         : (string * string) list,
+  workerHookData  : 'c option,
+  connectHookData : 'd option
 }
 
 
@@ -17,14 +19,16 @@ datatype Response =
   | ResponseStream  of ((string * (string * string) list) -> (string -> unit)) -> unit
 
 
-datatype settings = Settings of {
-  handler      : Env -> Response,
+datatype ('c, 'd) settings = Settings of {
+  handler      : ('c, 'd) Env -> Response,
   port         : int,
   host         : string,
   accept_queue : int,
   workers      : int,
   max_requests : int,
   reuseport    : bool,
+  worker_hook  : ((unit -> 'c) * ('c -> unit)) option,
+  connect_hook : ((unit -> 'd) * ('d -> unit)) option,
   logger       : string -> unit,
   timeout      : int
 }
@@ -123,7 +127,7 @@ fun run (Settings settings) =
     val timeout = #timeout settings
     val logger  = #logger  settings
 
-    fun handler socket =
+    fun handler (workerHookData, connectHookData) socket =
       let
 
         fun readContent socket cl buf =
@@ -146,12 +150,14 @@ fun run (Settings settings) =
              | SOME (method, uri, path, query, protocol, headers, buf) =>
                  let
                    val env = Env {
-                     requestMethod  = method,
-                     requestURI     = uri,
-                     pathInfo       = path,
-                     queryString    = query,
-                     serverProtocol = protocol,
-                     headers        = headers
+                     requestMethod   = method,
+                     requestURI      = uri,
+                     pathInfo        = path,
+                     queryString     = query,
+                     serverProtocol  = protocol,
+                     headers         = headers,
+                     workerHookData  = workerHookData,
+                     connectHookData = connectHookData
                    }
 
                    val (persistent, keepAliveHeader) = isPersistent protocol headers
@@ -203,6 +209,8 @@ fun run (Settings settings) =
       workers      = (#workers      settings),
       max_requests = (#max_requests settings),
       reuseport    = (#reuseport    settings),
+      worker_hook  = (#worker_hook  settings),
+      connect_hook = (#connect_hook settings),
       logger       = logger
     })
   end

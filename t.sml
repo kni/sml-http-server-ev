@@ -21,8 +21,11 @@ fun handler (HttpServer.Env env) =
   let
     val uri  = #requestURI env
     val path = #pathInfo env
+    val connectHookData = #connectHookData env
   in
     logger ("Request URI: " ^ uri);
+
+    case connectHookData of NONE => () | SOME data => print data;
 
     case path of
         "/simple"  => HttpServer.ResponseSimple ("200 OK", [], "Hello! Simple.\r\n")
@@ -42,15 +45,17 @@ fun handler (HttpServer.Env env) =
 
 
 val settings = HttpServer.Settings {
-  handler      = handler,
-  port         = 5000,
-  host         = "*",
-  accept_queue = 10,
-  workers      = 0,
-  max_requests = 1000, (* ToDo *)
-  reuseport    = false,
-  logger       = logger,
-  timeout      = 3 (* ToDo *)
+  handler        = handler,
+  port           = 5000,
+  host           = "*",
+  accept_queue   = 10,
+  workers        = 4,
+  max_requests   = 1000, (* ToDo *)
+  reuseport      = false,
+  worker_hook    = SOME ( (fn () => logger "Worker init hook."),  (fn _  => logger "Worker cleanup hook.") ),
+  connect_hook   = SOME ( (fn () => (logger "Connect init hook."; "It's connect hook data.\n")), (fn _  => logger "Connect cleanup hook.") ),
+  logger         = logger,
+  timeout        = 3 (* ToDo *)
 }
 
 fun main () = HttpServer.run settings
