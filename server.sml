@@ -23,12 +23,12 @@ datatype ('c, 'd) settings = Settings of {
   handler      : ('c, 'd) Env -> Response,
   port         : int,
   host         : string,
-  accept_queue : int,
+  acceptQueue  : int,
   workers      : int,
-  max_requests : int,
+  maxRequests  : int,
   reuseport    : bool,
-  worker_hook  : ((unit -> 'c) * ('c -> unit)) option,
-  connect_hook : ((unit -> 'd) * ('d -> unit)) option,
+  workerHook   : ((unit -> 'c) * ('c -> unit)) option,
+  connectHook  : ((unit -> 'd) * ('d -> unit)) option,
   logger       : string -> unit,
   timeout      : int
 }
@@ -205,12 +205,12 @@ fun run (Settings settings) =
       handler      = handler,
       port         = (#port         settings),
       host         = (#host         settings),
-      accept_queue = (#accept_queue settings),
+      acceptQueue  = (#acceptQueue settings),
       workers      = (#workers      settings),
-      max_requests = (#max_requests settings),
+      maxRequests  = (#maxRequests settings),
       reuseport    = (#reuseport    settings),
-      worker_hook  = (#worker_hook  settings),
-      connect_hook = (#connect_hook settings),
+      workerHook   = (#workerHook  settings),
+      connectHook  = (#connectHook settings),
       logger       = logger
     })
   end
