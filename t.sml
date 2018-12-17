@@ -55,7 +55,7 @@ val settings = HttpServer.Settings {
   workerHook     = SOME ( (fn () => logger "Worker init hook."),  (fn _  => logger "Worker cleanup hook.") ),
   connectHook    = SOME ( (fn () => (logger "Connect init hook."; "It's connect hook data.\n")), (fn _  => logger "Connect cleanup hook.") ),
   logger         = logger,
-  timeout        = 3 (* ToDo *)
+  timeout        = SOME (Time.fromSeconds 180)
 }
 
 fun main () = HttpServer.run settings

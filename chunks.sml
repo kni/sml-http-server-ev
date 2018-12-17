@@ -20,7 +20,7 @@ fun getChunkSize t =
 
 
 
-fun readChunkData read socket buf n i =
+fun readChunkData needStop read timeout socket buf n i =
  let
    val s = String.size buf
    (* val _ = print ("n=" ^ (Int.toString n) ^ " i=" ^ (Int.toString i) ^ " s=" ^ (Int.toString s) ^ " buf: " ^ buf ^ "\n") *)
@@ -35,7 +35,7 @@ fun readChunkData read socket buf n i =
        then (
          if s >= i + n + 2
          then (if String.sub (buf, i + n + 1) = #"\n" then String.substring (buf, i + n + 2, s - i - n - 2) else raise HttpBadChunks )
-         else (case read socket of "" => raise HttpBadChunks | b => readChunkData read socket (buf ^ b) n i)
+         else (case read timeout socket of "" => if needStop () then "" else raise HttpBadChunks | b => readChunkData needStop read timeout socket (buf ^ b) n i)
        )
        else if c = #"\n"
        then String.substring (buf, i + n + 1, s - i - n - 1)
@@ -46,7 +46,7 @@ fun readChunkData read socket buf n i =
      let
        val data = buf
      in
-       case read socket of "" => raise HttpBadChunks | buf => readChunkData read socket buf (n - s + i) 0
+       case read timeout socket of "" => if needStop () then "" else raise HttpBadChunks | buf => readChunkData needStop read timeout socket buf (n - s + i) 0
      end
  end
 
@@ -54,16 +54,16 @@ fun readChunkData read socket buf n i =
 in
 
 
-fun readChunkes read socket buf =
+fun readChunkes needStop read timeout socket buf =
   case getChunkSize buf of
-      NONE => (case read socket of "" => raise HttpBadChunks | b => readChunkes read socket (buf ^ b))
+      NONE => (case read timeout socket of "" => if needStop () then "" else raise HttpBadChunks | b => readChunkes needStop read timeout socket (buf ^ b))
     | SOME (n, i) =>
       let
-        val buf = readChunkData read socket buf n i
+        val buf = readChunkData needStop read timeout socket buf n i
       in
         if n = 0
         then buf
-        else readChunkes read socket buf
+        else readChunkes needStop read timeout socket buf
       end
 
 end
@@ -74,12 +74,16 @@ end
 fun test () =
   let
 
+    fun needStop () = false
+
+    val timeout = NONE
+
     fun test chunks tail =
       let
         val bufs = ref chunks
         val socket = "ToDo"
 
-        fun read socket =
+        fun read timeout socket =
           let
             val buf = hd (!bufs)
           in
@@ -87,7 +91,7 @@ fun test () =
             buf
           end
 
-        val buf = HttpChunks.readChunkes read socket ""
+        val buf = HttpChunks.readChunkes needStop read timeout socket ""
       in
         if buf = tail then print "OK\n" else print "ERROR\n"
       end
