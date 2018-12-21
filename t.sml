@@ -54,8 +54,8 @@ val settings = HttpServer.Settings {
   workers        = 4,
   maxRequests    = 1000, (* ToDo *)
   reuseport      = false,
-  workerHook     = SOME ( (fn () => logger "Worker init hook."),  (fn _  => logger "Worker cleanup hook.") ),
-  connectHook    = SOME ( (fn () => (logger "Connect init hook."; "It's connect hook data.\n")), (fn _  => logger "Connect cleanup hook.") ),
+  workerHook     = SOME ( (fn ev => logger "Worker init hook."),  (fn _  => logger "Worker cleanup hook.") ),
+  connectHook    = SOME ( (fn ev => (logger "Connect init hook."; "It's connect hook data.\n")), (fn _  => logger "Connect cleanup hook.") ),
   logger         = logger,
   timeout        = SOME (Time.fromSeconds 180)
 }

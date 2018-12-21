@@ -4,6 +4,7 @@ local
 in
 	../Ev/hash-array-int.sml
 	../Ev/ev-kqueue-mlton.sml
+	../Ev/ev-with-timer.sml
 	net-server/os-constants.sml
 	net-server/server-mlton.sml
 	net-server/server-stream.sml

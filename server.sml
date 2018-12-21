@@ -1,7 +1,9 @@
 structure HttpServer =
 struct
 
-datatype ('c, 'd) Env = Env of {
+type ev = EvWithTimer.ev
+
+datatype ('a, 'c, 'd) Env = Env of {
   requestMethod   : string,
   requestURI      : string,
   pathInfo        : string,
@@ -9,7 +11,8 @@ datatype ('c, 'd) Env = Env of {
   serverProtocol  : string,
   headers         : (string * string) list,
   workerHookData  : 'c option,
-  connectHookData : 'd option
+  connectHookData : 'd option,
+  ev : 'a
 }
 
 
@@ -19,16 +22,16 @@ datatype Response =
   | ResponseStream  of ((string * (string * string) list) -> (string -> bool)) -> bool
 
 
-datatype ('c, 'd) settings = Settings of {
-  handler      : ('c, 'd) Env -> Response,
+datatype ('a, 'c, 'd) settings = Settings of {
+  handler      : ('a, 'c, 'd) Env -> Response,
   port         : int,
   host         : string,
   acceptQueue  : int,
   workers      : int,
   maxRequests  : int,
   reuseport    : bool,
-  workerHook   : ((unit -> 'c) * ('c -> unit)) option,
-  connectHook  : ((unit -> 'd) * ('d -> unit)) option,
+  workerHook   : ((ev -> 'c) * ('c -> unit)) option,
+  connectHook  : ((ev -> 'd) * ('d -> unit)) option,
   logger       : string -> unit,
   timeout      : Time.time option
 }
@@ -149,7 +152,8 @@ fun run (Settings settings) =
                        serverProtocol  = protocol,
                        headers         = headers,
                        workerHookData  = workerHookData,
-                       connectHookData = connectHookData
+                       connectHookData = connectHookData,
+                       ev = false
                      }
 
                      val (persistent, keepAliveHeader) = isPersistent protocol headers
