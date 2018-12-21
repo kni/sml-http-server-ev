@@ -41,50 +41,55 @@ val chunksize = 64 * 1024
 
 local
 
-  fun write timeout socket text = NetServer.write (socket, text, timeout)
-
   fun doHeaders [] = ""
     | doHeaders headers = (String.concatWith "\r\n" (List.map (fn (a, b) => (a ^ ": " ^ b)) headers)) ^ "\r\n"
 
-  fun doResponseSimple timeout socket keepAliveHeader (code, headers, body) =
+  (* ToDo rm timeout *)
+  fun doResponseSimple timeout stream keepAliveHeader (code, headers, body) =
     let
       val contentLength = String.size body
+      val res =
+        if contentLength = 0
+        then
+          "HTTP/1.1 " ^ code ^ "\r\n" ^
+            (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
+            (doHeaders headers) ^
+            "\r\n"
+        else
+          "HTTP/1.1 " ^ code ^ "\r\n" ^
+            (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
+            (doHeaders headers) ^
+            "Content-Length: " ^ (Int.toString contentLength) ^ "\r\n" ^
+            "\r\n" ^
+             body
     in
-      if contentLength = 0
-      then write timeout socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
-          (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
-          (doHeaders headers) ^
-          "\r\n"
-        )
-      else write timeout socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
-          (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
-          (doHeaders headers) ^
-          "Content-Length: " ^ (Int.toString contentLength) ^ "\r\n" ^
-          "\r\n" ^
-          body
-        )
+      NetServer.write (stream, res);
+      true
     end
 
 in
-  fun doResponse timeout socket keepAliveHeader (ResponseSimple (code, headers, body)) = doResponseSimple timeout socket keepAliveHeader (code, headers, body)
-    | doResponse timeout socket keepAliveHeader (ResponseDelayed f) = f (doResponseSimple timeout socket keepAliveHeader)
-    | doResponse timeout socket keepAliveHeader (ResponseStream f) =
+  fun doResponse timeout stream keepAliveHeader (ResponseSimple (code, headers, body)) = doResponseSimple timeout stream keepAliveHeader (code, headers, body)
+    | doResponse timeout stream keepAliveHeader (ResponseDelayed f) = f (doResponseSimple timeout stream keepAliveHeader)
+    | doResponse timeout stream keepAliveHeader (ResponseStream f) =
       let
         fun writer t =
           let
             val length = String.size t
+            val res = if length = 0
+                      then "0\r\n\r\n"
+                      else (Int.fmt StringCvt.HEX length) ^ "\r\n" ^ t ^ "\r\n"
          in
-           if length = 0 then write timeout socket "0\r\n\r\n" else
-           write timeout socket ((Int.fmt StringCvt.HEX length) ^ "\r\n" ^ t ^ "\r\n")
+           NetServer.write (stream, res);
+           true
          end
 
         fun doit (code, headers) = (
-            write timeout socket ("HTTP/1.1 " ^ code ^ "\r\n" ^
+            NetServer.write (stream, ("HTTP/1.1 " ^ code ^ "\r\n" ^
               (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
               (doHeaders headers) ^
               "Transfer-Encoding: chunked\r\n" ^
               "\r\n"
-            );
+            ));
             writer
           )
       in
@@ -113,11 +118,10 @@ fun run (Settings settings) =
     val timeout = #timeout settings
     val logger  = #logger  settings
 
-    fun handler (workerHookData, connectHookData) socket =
+    fun handler (workerHookData, connectHookData) stream =
       let
 
-        fun read timeout socket = NetServer.read (socket, chunksize, timeout)
-
+        (*
         fun readContent socket cl buf =
           let
             val s = String.size buf
@@ -130,25 +134,28 @@ fun run (Settings settings) =
 
         fun readChunkes socket buf = HttpChunks.readChunkes needStop read timeout socket buf
           handle HttpChunks.HttpBadChunks => raise HttpBadRequest | exc => raise exc
+        *)
 
+        fun doit (stream, buf) = 
+            case HttpHeaders.parse buf of NONE => buf
+               | SOME (method, uri, path, query, protocol, headers, buf) =>
+                   (* ToDo *)
+                   let
+                     val env = Env {
+                       requestMethod   = method,
+                       requestURI      = uri,
+                       pathInfo        = path,
+                       queryString     = query,
+                       serverProtocol  = protocol,
+                       headers         = headers,
+                       workerHookData  = workerHookData,
+                       connectHookData = connectHookData
+                     }
 
-        fun doit buf =
-          case HttpHeaders.parse buf of
-               NONE => (case read timeout socket of "" => () | b => doit (buf ^ b))
-             | SOME (method, uri, path, query, protocol, headers, buf) =>
-                 let
-                   val env = Env {
-                     requestMethod   = method,
-                     requestURI      = uri,
-                     pathInfo        = path,
-                     queryString     = query,
-                     serverProtocol  = protocol,
-                     headers         = headers,
-                     workerHookData  = workerHookData,
-                     connectHookData = connectHookData
-                   }
+                     val (persistent, keepAliveHeader) = isPersistent protocol headers
 
-                   val (persistent, keepAliveHeader) = isPersistent protocol headers
+                     (*
+                     ToDo For POST
 
                    val buf =
                      if method = "POST" orelse method = "PUT"
@@ -170,22 +177,26 @@ fun run (Settings settings) =
                      )
                      else buf
 
-                   val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
-                 in
-                   doResponse timeout socket keepAliveHeader res;
-                   if persistent then doit buf else ()
-                 end
+                     *)
 
+                     val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
+                   in
+                     doResponse timeout stream keepAliveHeader res;
+                     (* ToDo if persistent ... *)
+                     buf
+                   end
 
+        fun readCb (stream, "")  = (logger "BY, stream (client closed socket)."; "")
+          | readCb (stream, buf) = (
+            doit (stream, buf) handle
+                HttpBadRequest => (doResponse timeout stream false (ResponseSimple ("400", [], "Bad Request\r\n")); "")
+              | OS.SysErr (msg,  SOME ECONNRESET) => (logger ("ERROR ECONNRESET: " ^ msg ^ "\n"); "")
+              | exc => raise exc
+            )
       in
+        (* logger "BY, socket." ToDo *)
         logger "HELLO, socket.";
-
-        (doit "" handle
-            HttpBadRequest => (doResponse timeout socket false (ResponseSimple ("400", [], "Bad Request\r\n")); ())
-          | OS.SysErr (msg,  SOME ECONNRESET) => logger ("ERROR ECONNRESET: " ^ msg ^ "\n")
-          | exc => raise exc);
-
-        logger "BY, socket."
+        NetServer.read (stream, readCb)
       end
 
   in

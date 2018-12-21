@@ -3,6 +3,8 @@ curl -D - 'http://localhost:5000/simple?a=b'
 curl -D - 'http://localhost:5000/delayed?a=b'
 curl -D - 'http://localhost:5000/stream?a=b'
 
+curl -D - 'http://localhost:5000/simple?a=b' -: -D - 'http://localhost:5000/delayed?a=b' -: -D - 'http://localhost:5000/stream?a=b'
+
 curl -H "Transfer-Encoding: chunked" -d 'a=b' -D - 'http://localhost:5000/simple'
 
 curl -H "Transfer-Encoding: chunked" -d 'a=b' -D - 'http://localhost:5000/simple' -: -d 'a=b' -D - 'http://localhost:5000/stream'
