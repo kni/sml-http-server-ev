@@ -12,7 +12,7 @@ datatype ('a, 'c, 'd) Env = Env of {
   headers         : (string * string) list,
   workerHookData  : 'c option,
   connectHookData : 'd option,
-  ev : 'a
+  ev : 'a (* ev ToDo *)
 }
 
 
@@ -48,7 +48,7 @@ local
     | doHeaders headers = (String.concatWith "\r\n" (List.map (fn (a, b) => (a ^ ": " ^ b)) headers)) ^ "\r\n"
 
   (* ToDo rm timeout *)
-  fun doResponseSimple timeout stream keepAliveHeader (code, headers, body) =
+  fun doResponseSimple timeout stream persistent keepAliveHeader (code, headers, body) =
     let
       val contentLength = String.size body
       val res =
@@ -67,13 +67,14 @@ local
              body
     in
       NetServer.write (stream, res);
+      if persistent then () else NetServer.shutdown stream;
       true
     end
 
 in
-  fun doResponse timeout stream keepAliveHeader (ResponseSimple (code, headers, body)) = doResponseSimple timeout stream keepAliveHeader (code, headers, body)
-    | doResponse timeout stream keepAliveHeader (ResponseDelayed f) = f (doResponseSimple timeout stream keepAliveHeader)
-    | doResponse timeout stream keepAliveHeader (ResponseStream f) =
+  fun doResponse timeout stream persistent keepAliveHeader (ResponseSimple (code, headers, body)) = doResponseSimple timeout stream persistent keepAliveHeader (code, headers, body)
+    | doResponse timeout stream persistent keepAliveHeader (ResponseDelayed f) = f (doResponseSimple timeout stream persistent keepAliveHeader)
+    | doResponse timeout stream persistent keepAliveHeader (ResponseStream f) =
       let
         fun writer t =
           let
@@ -83,6 +84,7 @@ in
                       else (Int.fmt StringCvt.HEX length) ^ "\r\n" ^ t ^ "\r\n"
          in
            NetServer.write (stream, res);
+           if length = 0 then (if persistent then () else NetServer.shutdown stream) else ();
            true
          end
 
@@ -105,8 +107,10 @@ fun findPairValue _ [] = NONE
   | findPairValue x ((k,v)::ks) = if k = x then SOME v else findPairValue x ks
 
 
-fun isPersistent "HTTP/1.0" headers = (case findPairValue "connection" headers of SOME "keep-alive" => (true, true)   | _ => (false, false))
-  | isPersistent protocol   headers = (case findPairValue "connection" headers of SOME "close"      => (false, false) | _ => (true, false))
+fun findConnectionHeader headers = case findPairValue "connection" headers of NONE => NONE | SOME v => SOME (String.map Char.toLower v)
+
+fun isPersistent "HTTP/1.0" headers = (case findConnectionHeader headers of SOME "keep-alive" => (true, true)   | _ => (false, false))
+  | isPersistent protocol   headers = (case findConnectionHeader headers of SOME "close"      => (false, false) | _ => (true, false))
 
 
 exception HttpBadRequest
@@ -165,7 +169,7 @@ fun run (Settings settings) =
                      if method = "POST" orelse method = "PUT"
                      then (
                        if findPairValue "expect" headers = SOME "100-continue"
-                       then doResponse timeout socket keepAliveHeader (ResponseSimple ("100 Continue", [], "")) else true;
+                       then doResponse timeout socket persistent keepAliveHeader (ResponseSimple ("100 Continue", [], "")) else true;
 
                        case findPairValue "content-length" headers of
                          SOME cl => (
@@ -185,20 +189,18 @@ fun run (Settings settings) =
 
                      val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
                    in
-                     doResponse timeout stream keepAliveHeader res;
-                     (* ToDo if persistent ... *)
+                     doResponse timeout stream persistent keepAliveHeader res;
                      buf
                    end
 
         fun readCb (stream, "")  = (logger "BY, stream (client closed socket)."; "")
           | readCb (stream, buf) = (
             doit (stream, buf) handle
-                HttpBadRequest => (doResponse timeout stream false (ResponseSimple ("400", [], "Bad Request\r\n")); "")
+                HttpBadRequest => (doResponse timeout stream false false (ResponseSimple ("400", [], "Bad Request\r\n")); "")
               | OS.SysErr (msg,  SOME ECONNRESET) => (logger ("ERROR ECONNRESET: " ^ msg ^ "\n"); "")
               | exc => raise exc
             )
       in
-        (* logger "BY, socket." ToDo *)
         logger "HELLO, socket.";
         NetServer.read (stream, readCb)
       end
