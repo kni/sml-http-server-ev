@@ -27,7 +27,7 @@ fun handler (HttpServer.Env env) =
   in
     logger ("Request URI: " ^ uri);
 
-    case connectHookData of NONE => () | SOME data => print data;
+    case connectHookData of NONE => () | SOME data => logger data;
 
     case path of
         "/simple"  => HttpServer.ResponseSimple ("200 OK", [], "Hello! Simple.\r\n")

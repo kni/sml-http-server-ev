@@ -1,9 +1,9 @@
 structure HttpServer =
 struct
 
-type ev = EvWithTimer.ev
+type ev = Ev.ev
 
-datatype ('a, 'c, 'd) Env = Env of {
+datatype ('c, 'd) Env = Env of {
   requestMethod   : string,
   requestURI      : string,
   pathInfo        : string,
@@ -12,7 +12,7 @@ datatype ('a, 'c, 'd) Env = Env of {
   headers         : (string * string) list,
   workerHookData  : 'c option,
   connectHookData : 'd option,
-  ev : 'a (* ev ToDo *)
+  ev : ev
 }
 
 
@@ -22,8 +22,8 @@ datatype Response =
   | ResponseStream  of ((string * (string * string) list) -> (string -> bool)) -> bool
 
 
-datatype ('a, 'c, 'd) settings = Settings of {
-  handler      : ('a, 'c, 'd) Env -> Response,
+datatype ('c, 'd) settings = Settings of {
+  handler      : ('c, 'd) Env -> Response,
   port         : int,
   host         : string,
   acceptQueue  : int,
@@ -113,11 +113,6 @@ fun isPersistent "HTTP/1.0" headers = (case findConnectionHeader headers of SOME
   | isPersistent protocol   headers = (case findConnectionHeader headers of SOME "close"      => (false, false) | _ => (true, false))
 
 
-exception HttpBadRequest
-
-
-
-
 
 fun run (Settings settings) =
   let
@@ -125,81 +120,90 @@ fun run (Settings settings) =
     val timeout = #timeout settings
     val logger  = #logger  settings
 
-    fun handler (workerHookData, connectHookData) stream =
+    fun handler ev (workerHookData, connectHookData) stream =
       let
 
         (*
-        fun readContent socket cl buf =
-          let
-            val s = String.size buf
-          in
-            if cl <= s
-            then String.substring (buf, cl, s - cl)
-            else (case read timeout socket of "" => if needStop () then "" else raise HttpBadRequest | buf => readContent socket (cl - s) buf)
-          end
-
-
-        fun readChunkes socket buf = HttpChunks.readChunkes needStop read timeout socket buf
-          handle HttpChunks.HttpBadChunks => raise HttpBadRequest | exc => raise exc
+        ToDo
+        fun readContent socket cl buf = HttpContent.readContent needStop read timeout socket cl buf
+          handle HttpContent.HttpBadContent => raise HttpBadRequest | exc => raise exc
         *)
 
-        fun doit (stream, buf) = 
-            case HttpHeaders.parse buf of NONE => buf
-               | SOME (method, uri, path, query, protocol, headers, buf) =>
-                   (* ToDo *)
-                   let
-                     val env = Env {
-                       requestMethod   = method,
-                       requestURI      = uri,
-                       pathInfo        = path,
-                       queryString     = query,
-                       serverProtocol  = protocol,
-                       headers         = headers,
-                       workerHookData  = workerHookData,
-                       connectHookData = connectHookData,
-                       ev = false
-                     }
+        (*
+        ToDo
+        fun readChunkes socket buf = HttpContent.readChunkes needStop read timeout socket buf
+          handle HttpContent.HttpBadChunks => raise HttpBadRequest | exc => raise exc
+        *)
 
-                     val (persistent, keepAliveHeader) = isPersistent protocol headers
+        datatype readState = ReadHeaders | ReadContent of int | ReadChunkes of int
+        val readState = ref ReadHeaders
 
-                     (*
-                     ToDo For POST
+        fun doRead (stream, buf) =
+            case !readState of ReadHeaders => (
+              case HttpHeaders.parse buf of NONE => buf
+                 | SOME (method, uri, path, query, protocol, headers, buf) =>
+                     let
+                       val (persistent, keepAliveHeader) = isPersistent protocol headers
 
-                   val buf =
-                     if method = "POST" orelse method = "PUT"
-                     then (
-                       if findPairValue "expect" headers = SOME "100-continue"
-                       then doResponse timeout socket persistent keepAliveHeader (ResponseSimple ("100 Continue", [], "")) else true;
+                       fun callHandlerAnddoResponse () =
+                         let
+                           val env = Env {
+                             requestMethod   = method,
+                             requestURI      = uri,
+                             pathInfo        = path,
+                             queryString     = query,
+                             serverProtocol  = protocol,
+                             headers         = headers,
+                             workerHookData  = workerHookData,
+                             connectHookData = connectHookData,
+                             ev              = ev
+                           }
+                         in
+                           doResponse timeout stream persistent keepAliveHeader ((#handler settings) env) handle exc =>
+                             doResponse timeout stream false false (ResponseSimple ("500", [], "Internal server error\r\n"))
+                         end
 
-                       case findPairValue "content-length" headers of
-                         SOME cl => (
-                           case Int.fromString cl of
-                               NONE => raise HttpBadRequest
-                             | SOME cl => readContent socket cl buf
-                         )
-                       | NONE => (
-                           if findPairValue "transfer-encoding" headers = SOME "chunked"
-                           then readChunkes socket buf
-                           else buf
-                         )
-                     )
-                     else buf
+                     in
+                       if method = "POST" orelse method = "PUT"
+                       then (
+                         if findPairValue "expect" headers = SOME "100-continue"
+                         then doResponse timeout stream persistent keepAliveHeader (ResponseSimple ("100 Continue", [], "")) else true;
 
-                     *)
+                         case findPairValue "content-length" headers of
+                           SOME cl => (
+                             case Int.fromString cl of
+                                 NONE => doResponse timeout stream false false (ResponseSimple ("400", [], "Bad Request\r\n"))
+                               | SOME cl => (readState := ReadContent cl ; true)
+                           )
+                         | NONE => (
+                             if findPairValue "transfer-encoding" headers = SOME "chunked"
+                             then (readState := ReadChunkes 0; true)
+                             else true
+                           )
+                       )
+                       else callHandlerAnddoResponse ()
+                       ;
+                       if buf = "" then buf else doRead (stream, buf)
+                     end
+              )
+           | ReadContent cl => (
+               (* ToDo *)
+               print "ReadContent\n";
+               readState := ReadHeaders;
+               doResponse timeout stream false false (ResponseSimple ("501", [], "Not Implemented \r\n"));
+               buf
+             )
+           | ReadChunkes size => (
+               (* ToDo *)
+               print "ReadChunkes\n";
+               readState := ReadHeaders;
+               doResponse timeout stream false false (ResponseSimple ("501", [], "Not Implemented \r\n"));
+               buf
+             )
 
-                     val res = (#handler settings) env handle exc => ResponseSimple ("500", [], "Internal server error\r\n")
-                   in
-                     doResponse timeout stream persistent keepAliveHeader res;
-                     buf
-                   end
 
         fun readCb (stream, "")  = (logger "BY, stream (client closed socket)."; "")
-          | readCb (stream, buf) = (
-            doit (stream, buf) handle
-                HttpBadRequest => (doResponse timeout stream false false (ResponseSimple ("400", [], "Bad Request\r\n")); "")
-              | OS.SysErr (msg,  SOME ECONNRESET) => (logger ("ERROR ECONNRESET: " ^ msg ^ "\n"); "")
-              | exc => raise exc
-            )
+          | readCb (stream, buf) = doRead (stream, buf)
       in
         logger "HELLO, socket.";
         NetServer.read (stream, readCb)
