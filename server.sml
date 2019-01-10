@@ -40,6 +40,7 @@ datatype ('c, 'd) settings = Settings of {
 val needStop = NetServer.needStop
 
 
+val maxHeadersSize = 8 * 1024
 val chunksize = 64 * 1024
 
 
@@ -158,7 +159,10 @@ fun run (Settings settings) =
 
         fun doRead (stream, buf) =
             case !readState of ReadHeaders => (
-              case HttpHeaders.parse buf of NONE => buf
+              case HttpHeaders.parse buf of
+                   NONE => if String.size buf > maxHeadersSize
+                           then (doResponse timeout stream false false (ResponseSimple ("413", [], "Entity Too Large\r\n")); "")
+                           else buf
                  | SOME (method, uri, path, query, protocol, headers, buf) =>
                      let
                        val (persistent, keepAliveHeader) = isPersistent protocol headers
