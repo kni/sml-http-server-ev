@@ -49,8 +49,7 @@ local
   fun doHeaders [] = ""
     | doHeaders headers = (String.concatWith "\r\n" (List.map (fn (a, b) => (a ^ ": " ^ b)) headers)) ^ "\r\n"
 
-  (* ToDo rm timeout *)
-  fun doResponseSimple timeout stream persistent keepAliveHeader (code, headers, body) =
+  fun doResponseSimple stream persistent keepAliveHeader (code, headers, body) =
     let
       val contentLength = String.size body
       val res =
@@ -74,9 +73,9 @@ local
     end
 
 in
-  fun doResponse timeout stream persistent keepAliveHeader (ResponseSimple (code, headers, body)) = doResponseSimple timeout stream persistent keepAliveHeader (code, headers, body)
-    | doResponse timeout stream persistent keepAliveHeader (ResponseDelayed f) = f (doResponseSimple timeout stream persistent keepAliveHeader)
-    | doResponse timeout stream persistent keepAliveHeader (ResponseStream f) =
+  fun doResponse stream persistent keepAliveHeader (ResponseSimple (code, headers, body)) = doResponseSimple stream persistent keepAliveHeader (code, headers, body)
+    | doResponse stream persistent keepAliveHeader (ResponseDelayed f) = f (doResponseSimple stream persistent keepAliveHeader)
+    | doResponse stream persistent keepAliveHeader (ResponseStream f) =
       let
         fun writer t =
           let
@@ -121,7 +120,6 @@ exception HttpBadRequest
 fun run (Settings settings) =
   let
 
-    val timeout = #timeout settings
     val logger  = #logger  settings
 
     fun handler ev (workerHookData, connectHookData) stream =
@@ -161,7 +159,7 @@ fun run (Settings settings) =
             case !readState of ReadHeaders => (
               case HttpHeaders.parse buf of
                    NONE => if String.size buf > maxHeadersSize
-                           then (doResponse timeout stream false false (ResponseSimple ("413", [], "Entity Too Large\r\n")); "")
+                           then (doResponse stream false false (ResponseSimple ("413", [], "Entity Too Large\r\n")); "")
                            else buf
                  | SOME (method, uri, path, query, protocol, headers, buf) =>
                      let
@@ -182,20 +180,20 @@ fun run (Settings settings) =
                              ev              = ev
                            }
                          in
-                           doResponse timeout stream persistent keepAliveHeader ((#handler settings) env) handle exc =>
-                             doResponse timeout stream false false (ResponseSimple ("500", [], "Internal server error\r\n"))
+                           doResponse stream persistent keepAliveHeader ((#handler settings) env) handle exc =>
+                             doResponse stream false false (ResponseSimple ("500", [], "Internal server error\r\n"))
                          end
 
                      in
                        if method = "POST" orelse method = "PUT"
                        then (
                          if findPairValue "expect" headers = SOME "100-continue"
-                         then doResponse timeout stream persistent keepAliveHeader (ResponseSimple ("100 Continue", [], "")) else true;
+                         then doResponse stream persistent keepAliveHeader (ResponseSimple ("100 Continue", [], "")) else true;
 
                          case findPairValue "content-length" headers of
                            SOME cl => (
                              case Int.fromString cl of
-                                 NONE => doResponse timeout stream false false (ResponseSimple ("400", [], "Bad Request\r\n"))
+                                 NONE => doResponse stream false false (ResponseSimple ("400", [], "Bad Request\r\n"))
                                | SOME cl =>
                                  let
                                    val state = ref NONE
@@ -229,7 +227,7 @@ fun run (Settings settings) =
 
         fun readCb (stream, "")  = (logger "BY, stream (client closed socket)."; "")
           | readCb (stream, buf) = doRead (stream, buf) handle
-              HttpBadRequest => (doResponse timeout stream false false (ResponseSimple ("400", [], "Bad Request\r\n")); "")
+              HttpBadRequest => (doResponse stream false false (ResponseSimple ("400", [], "Bad Request\r\n")); "")
             | exc => raise exc
       in
         logger "HELLO, socket.";
