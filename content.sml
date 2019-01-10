@@ -137,6 +137,8 @@ exception HttpBadChunks
 
 local
 
+val maxChunkSizeEntity = 1024
+
 (* return SOME (n, i), where n - is chunck size, i - shift to chunck begin *)
 fun getChunkSize t =
   let
@@ -205,7 +207,8 @@ fun readChunkes (state, buf) =
     fun doit ""  n i = (state := SOME (n, i, ic); (NONE, ""))
       | doit buf 0 i = (
       case getChunkSize buf of
-          NONE => (state := SOME (n, i, ic); (NONE, buf))
+          NONE => if String.size buf > maxChunkSizeEntity then raise HttpBadChunks else
+            ( state := SOME (n, i, ic); (NONE, buf))
         | SOME (n, i) =>
           let
             val (n', i', buf) = readChunkData buf n i ic
@@ -259,6 +262,7 @@ fun testReadChunkes () =
     test ["0\r\n\r\n"] "" "";
     test ["5\r\n", "Hello\r\n", "0\r\n\r\n"] "Hello" "";
     test ["5\r\n", "Hell", "o\r\n", "0\r\n\r\n", ""] "Hello" "";
+    test ["5 chunk-extension \r\n", "Hello\r\n", "0\r\n\r\n"] "Hello" "";
     test ["5\r\nHello\r\n", "A\r\n, Plack!\r\n\r\n", "0\r\n\r\n", "", ""] "Hello, Plack!\r\n" "";
     test ["5\r\nHello\r\nA\r\n, Plack!\r\n\r\n0\r\n\r\nXXXX\n"] "Hello, Plack!\r\n" "XXXX\n";
     ()
