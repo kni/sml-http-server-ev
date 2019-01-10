@@ -6,5 +6,6 @@ use "net-server/server-poly.sml";
 use "net-server/server-stream.sml";
 use "net-server/server.sml";
 use "headers.sml";
+use "content.sml";
 use "server.sml";
 use "t.sml";

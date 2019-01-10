@@ -13,6 +13,7 @@ curl --data-binary @/etc/services -H "Transfer-Encoding: chunked" -D - 'http://l
 
 curl --data-binary "a=b" -H "Transfer-Encoding: chunked" 'http://localhost:5000/simple' -: 'http://localhost:5000/simple' -: -d 'a=b' 'http://localhost:5000/stream'
 
+curl -s --data-binary @/etc/services -H "Transfer-Encoding: chunked" -D - 'http://localhost:5000/show-data'
 *)
 
 fun logger msg = print ((Date.fmt "%Y-%m-%d %H:%M:%S" (Date.fromTimeUniv(Time.now()))) ^ "\t" ^ msg ^ "\n")
@@ -42,6 +43,11 @@ fun handler (HttpServer.Env env) =
             writer ""
           end
         )
+      | "/show-data" => HttpServer.ResponseSimple ("200 OK", [],
+          case #input env of
+              SOME inputStream => TextIO.inputAll inputStream ^ "\r\n"
+            | NONE => "-\r\n"
+          )
       | _ => HttpServer.ResponseSimple ("200 OK", [], "Hello!\r\n")
   end
 
@@ -55,9 +61,10 @@ val settings = HttpServer.Settings {
   maxRequests    = 1000, (* ToDo *)
   reuseport      = false,
   workerHook     = SOME ( (fn ev => logger "Worker init hook."),  (fn _  => logger "Worker cleanup hook.") ),
-  connectHook    = SOME ( (fn ev => (logger "Connect init hook."; "It's connect hook data.\n")), (fn _  => logger "Connect cleanup hook.") ),
+  connectHook    = SOME ( (fn ev => (logger "Connect init hook."; "It's connect hook data.")), (fn _  => logger "Connect cleanup hook.") ),
   logger         = logger,
   timeout        = SOME (Time.fromSeconds 180)
 }
+
 
 fun main () = HttpServer.run settings

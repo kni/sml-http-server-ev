@@ -10,6 +10,7 @@ datatype ('c, 'd) Env = Env of {
   queryString     : string,
   serverProtocol  : string,
   headers         : (string * string) list,
+  input           : TextIO.instream option,
   workerHookData  : 'c option,
   connectHookData : 'd option,
   ev : ev
@@ -113,6 +114,8 @@ fun isPersistent "HTTP/1.0" headers = (case findConnectionHeader headers of SOME
   | isPersistent protocol   headers = (case findConnectionHeader headers of SOME "close"      => (false, false) | _ => (true, false))
 
 
+exception HttpBadRequest
+
 
 fun run (Settings settings) =
   let
@@ -123,20 +126,35 @@ fun run (Settings settings) =
     fun handler ev (workerHookData, connectHookData) stream =
       let
 
-        (*
-        ToDo
-        fun readContent socket cl buf = HttpContent.readContent needStop read timeout socket cl buf
-          handle HttpContent.HttpBadContent => raise HttpBadRequest | exc => raise exc
-        *)
+        datatype ('a, 'b) readState =
+            ReadHeaders
+          | ReadContent of (TextIO.instream option -> bool) * 'a ref
+          | ReadChunkes of (TextIO.instream option -> bool) * 'b ref
 
-        (*
-        ToDo
-        fun readChunkes socket buf = HttpContent.readChunkes needStop read timeout socket buf
-          handle HttpContent.HttpBadChunks => raise HttpBadRequest | exc => raise exc
-        *)
-
-        datatype readState = ReadHeaders | ReadContent of int | ReadChunkes of int
         val readState = ref ReadHeaders
+
+
+        fun readContent (f, state, buf, cl) =
+            case HttpContent.readContent (state, buf, cl) of
+                (NONE,     buf) => buf
+              | (SOME ics, buf) => (
+                  readState := ReadHeaders;
+                  f (SOME ics);
+                  TextIO.closeIn ics;
+                  buf
+                )
+
+        fun readChunkes (f, state, buf) = (
+          case HttpContent.readChunkes (state, buf) handle HttpContent.HttpBadChunks => raise HttpBadRequest | exc => raise exc of
+               (NONE,     buf) => buf
+             | (SOME ics, buf) => (
+                 readState := ReadHeaders;
+                 f (SOME ics);
+                 TextIO.closeIn ics;
+                 buf
+               )
+            )
+
 
         fun doRead (stream, buf) =
             case !readState of ReadHeaders => (
@@ -145,7 +163,7 @@ fun run (Settings settings) =
                      let
                        val (persistent, keepAliveHeader) = isPersistent protocol headers
 
-                       fun callHandlerAnddoResponse () =
+                       fun callHandlerAnddoResponse (inputContent:TextIO.instream option) : bool =
                          let
                            val env = Env {
                              requestMethod   = method,
@@ -154,6 +172,7 @@ fun run (Settings settings) =
                              queryString     = query,
                              serverProtocol  = protocol,
                              headers         = headers,
+                             input           = inputContent,
                              workerHookData  = workerHookData,
                              connectHookData = connectHookData,
                              ev              = ev
@@ -173,37 +192,41 @@ fun run (Settings settings) =
                            SOME cl => (
                              case Int.fromString cl of
                                  NONE => doResponse timeout stream false false (ResponseSimple ("400", [], "Bad Request\r\n"))
-                               | SOME cl => (readState := ReadContent cl ; true)
+                               | SOME cl =>
+                                 let
+                                   val state = ref NONE
+                                 in
+                                   readState := ReadContent (callHandlerAnddoResponse, state);
+                                   readContent (callHandlerAnddoResponse, state, buf, SOME cl);
+                                   true
+                                 end
                            )
                          | NONE => (
                              if findPairValue "transfer-encoding" headers = SOME "chunked"
-                             then (readState := ReadChunkes 0; true)
+                             then
+                               let
+                                 val state = ref NONE
+                               in
+                                 readState := ReadChunkes (callHandlerAnddoResponse, state);
+                                 readChunkes (callHandlerAnddoResponse, state, buf);
+                                 true
+                               end
                              else true
                            )
                        )
-                       else callHandlerAnddoResponse ()
+                       else callHandlerAnddoResponse NONE
                        ;
                        if buf = "" then buf else doRead (stream, buf)
                      end
               )
-           | ReadContent cl => (
-               (* ToDo *)
-               print "ReadContent\n";
-               readState := ReadHeaders;
-               doResponse timeout stream false false (ResponseSimple ("501", [], "Not Implemented \r\n"));
-               buf
-             )
-           | ReadChunkes size => (
-               (* ToDo *)
-               print "ReadChunkes\n";
-               readState := ReadHeaders;
-               doResponse timeout stream false false (ResponseSimple ("501", [], "Not Implemented \r\n"));
-               buf
-             )
+           | ReadContent (f, state) => readContent (f, state, buf, NONE)
+           | ReadChunkes (f, state) => readChunkes (f, state, buf)
 
 
         fun readCb (stream, "")  = (logger "BY, stream (client closed socket)."; "")
-          | readCb (stream, buf) = doRead (stream, buf)
+          | readCb (stream, buf) = doRead (stream, buf) handle
+              HttpBadRequest => (doResponse timeout stream false false (ResponseSimple ("400", [], "Bad Request\r\n")); "")
+            | exc => raise exc
       in
         logger "HELLO, socket.";
         NetServer.read (stream, readCb)
