@@ -22,6 +22,7 @@ fun logger msg = print ((Date.fmt "%Y-%m-%d %H:%M:%S" (Date.fromTimeUniv(Time.no
 
 fun handler (HttpServer.Env env) =
   let
+    val ev   = #ev env (* Use Ev for asynchronous. *)
     val uri  = #requestURI env
     val path = #pathInfo env
     val connectHookData = #connectHookData env
