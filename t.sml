@@ -58,8 +58,8 @@ val settings = HttpServer.Settings {
   port           = 5000,
   host           = "*",
   acceptQueue    = 128,
-  workers        = 4,
-  maxRequests    = 1000, (* ToDo *)
+  workers        = 4,    (* 0 - without workers *)
+  maxRequests    = 1000, (* max requests per worker, 0 - without limit *)
   reuseport      = false,
   workerHook     = SOME ( (fn ev => logger "Worker init hook."),  (fn _  => logger "Worker cleanup hook.") ),
   connectHook    = SOME ( (fn ev => (logger "Connect init hook."; "It's connect hook data.")), (fn _  => logger "Connect cleanup hook.") ),
@@ -68,4 +68,7 @@ val settings = HttpServer.Settings {
 }
 
 
-fun main () = HttpServer.run settings
+fun main () = (
+    logger "Start.";
+    HttpServer.run settings
+  )

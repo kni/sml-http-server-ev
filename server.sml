@@ -235,7 +235,6 @@ fun run (Settings settings) =
       end
 
   in
-    logger "Start.";
     NetServer.run (NetServer.Settings {
       handler      = handler,
       port         = (#port        settings),
