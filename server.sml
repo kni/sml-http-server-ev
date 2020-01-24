@@ -13,7 +13,7 @@ datatype ('c, 'd) Env = Env of {
   input           : TextIO.instream option,
   workerHookData  : 'c option,
   connectHookData : 'd option,
-  ev : ev
+  ev : Ev.ev
 }
 
 
@@ -31,8 +31,8 @@ datatype ('c, 'd) settings = Settings of {
   workers      : int,
   maxRequests  : int,
   reuseport    : bool,
-  workerHook   : ((ev -> 'c) * ('c -> unit)) option,
-  connectHook  : ((ev -> 'd) * ('d -> unit)) option,
+  workerHook   : ((Ev.ev -> 'c) * ('c -> unit)) option,
+  connectHook  : ((Ev.ev -> 'd) * ('d -> unit)) option,
   logger       : string -> unit,
   timeout      : Time.time option
 }

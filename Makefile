@@ -1,22 +1,31 @@
+USER_SML_LIB?=${HOME}/SML
+
 all:
-	@echo "make targets: poly, mlton, clean."
+	@echo "make targets: poly mlton clean"
+	@echo "make depends && make USER_SML_LIB=lib poly mlton"
 
-poly: ev net-server net-server/os-constants.sml
-	polyc -o t-poly t.mlp
+poly: ${USER_SML_LIB}/net-server-ev/os-constants.sml
+	env USER_SML_LIB=${USER_SML_LIB} polyc -o t-poly t.mlp
 
-mlton: ev net-server net-server/os-constants.sml
-	mlton -default-ann 'allowFFI true' -output t-mlton t.mlb
+mlton: ${USER_SML_LIB}/net-server-ev/os-constants.sml
+	mlton -mlb-path-var 'USER_SML_LIB ${USER_SML_LIB}' -default-ann 'allowFFI true' -output t-mlton t.mlb
 
-net-server/os-constants.sml:
-	cd net-server; make os-constants.sml
 
-ev:
-	git clone https://github.com/kni/sml-ev.git ev
+${USER_SML_LIB}/net-server-ev/os-constants.sml:
+	cd ${USER_SML_LIB}/net-server-ev; make os-constants.sml
 
-net-server:
-	git clone https://github.com/kni/sml-net-server-ev.git net-server
+
+depends: lib lib/ev lib/net-server-ev
+
+lib:
+	mkdir lib
+
+lib/ev:
+	git clone https://github.com/kni/sml-ev.git lib/ev
+
+lib/net-server-ev:
+	git clone https://github.com/kni/sml-net-server-ev.git lib/net-server-ev
+	cd lib/net-server-ev; make os-constants.sml
 
 clean:
-	rm -rf t-poly t-mlton
-	test -h ev || rm -rf ev
-	test -h net-server || rm -rf ev
+	rm -rf lib t-poly t-mlton
