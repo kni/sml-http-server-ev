@@ -180,8 +180,10 @@ fun run (Settings settings) =
                              ev              = ev
                            }
                          in
-                           doResponse stream persistent keepAliveHeader ((#handler settings) env) handle exc =>
-                             doResponse stream false false (ResponseSimple ("500", [], "Internal server error\r\n"))
+                           doResponse stream persistent keepAliveHeader ((#handler settings) env) handle exc => (
+                               logger (exnMessage exc);
+                               doResponse stream false false (ResponseSimple ("500", [], "Internal server error\r\n"))
+                             )
                          end
 
                      in
