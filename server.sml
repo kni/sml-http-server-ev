@@ -51,21 +51,13 @@ local
 
   fun doResponseSimple stream persistent keepAliveHeader (code, headers, body) =
     let
-      val contentLength = String.size body
       val res =
-        if contentLength = 0
-        then
-          "HTTP/1.1 " ^ code ^ "\r\n" ^
-            (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
-            (doHeaders headers) ^
-            "\r\n"
-        else
-          "HTTP/1.1 " ^ code ^ "\r\n" ^
-            (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
-            (doHeaders headers) ^
-            "Content-Length: " ^ (Int.toString contentLength) ^ "\r\n" ^
-            "\r\n" ^
-             body
+        "HTTP/1.1 " ^ code ^ "\r\n" ^
+          (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
+          (doHeaders headers) ^
+          "Content-Length: " ^ (Int.toString (String.size body)) ^ "\r\n" ^
+          "\r\n" ^
+           body
     in
       NetServer.write (stream, res);
       if persistent then () else NetServer.shutdown stream;
@@ -73,6 +65,19 @@ local
     end
 
 in
+  fun doResponseHeaders stream persistent keepAliveHeader (code, headers) =
+    let
+      val res =
+        "HTTP/1.1 " ^ code ^ "\r\n" ^
+          (if keepAliveHeader then "Connection: keep-alive\r\n" else "") ^
+          (doHeaders headers) ^
+          "\r\n"
+    in
+      NetServer.write (stream, res);
+      if persistent then () else NetServer.shutdown stream;
+      true
+    end
+
   fun doResponse stream persistent keepAliveHeader (ResponseSimple (code, headers, body)) = doResponseSimple stream persistent keepAliveHeader (code, headers, body)
     | doResponse stream persistent keepAliveHeader (ResponseDelayed f) = f (doResponseSimple stream persistent keepAliveHeader)
     | doResponse stream persistent keepAliveHeader (ResponseStream f) =
@@ -190,7 +195,7 @@ fun run (Settings settings) =
                        if method = "POST" orelse method = "PUT"
                        then (
                          if findPairValue "expect" headers = SOME "100-continue"
-                         then doResponse stream persistent keepAliveHeader (ResponseSimple ("100 Continue", [], "")) else true;
+                         then doResponseHeaders stream persistent keepAliveHeader ("100 Continue", []) else true;
 
                          case findPairValue "content-length" headers of
                            SOME cl => (
