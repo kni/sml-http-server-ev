@@ -1,10 +1,10 @@
 val p = getOpt (OS.Process.getEnv "USER_SML_LIB", ".") ^ "/";
 
 use (p ^ "ev/hash-array.sml");
-use (p ^ "ev/ev-kqueue-poly.sml");
+use (p ^ "ev/ev-kqueue-polyml.sml");
 use (p ^ "ev/ev-with-timer.sml");
 use (p ^ "net-server-ev/os-constants.sml");
-use (p ^ "net-server-ev/server-poly.sml");
+use (p ^ "net-server-ev/server-polyml.sml");
 use (p ^ "net-server-ev/server-stream.sml");
 use (p ^ "net-server-ev/server.sml");
 
