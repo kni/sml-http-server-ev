@@ -14,6 +14,8 @@ curl --data-binary @/etc/services -H "Transfer-Encoding: chunked" -D - 'http://l
 curl --data-binary "a=b" -H "Transfer-Encoding: chunked" 'http://localhost:5000/simple' -: 'http://localhost:5000/simple' -: -d 'a=b' 'http://localhost:5000/stream'
 
 curl -s --data-binary @/etc/services -H "Transfer-Encoding: chunked" -D - 'http://localhost:5000/show-data'
+
+curl -s --data-binary @/etc/services -H "Transfer-Encoding: chunked" -D - 'http://localhost:5000/show-data-d'
 *)
 
 fun logger msg = print ((Date.fmt "%Y-%m-%d %H:%M:%S" (Date.fromTimeUniv(Time.now()))) ^ "\t" ^ msg ^ "\n")
@@ -49,6 +51,11 @@ fun handler (HttpServer.Env env) =
               SOME inputStream => TextIO.inputAll inputStream ^ "\r\n"
             | NONE => "-\r\n"
           )
+      | "/show-data-d" => HttpServer.ResponseDelayed (fn responder => responder ("200 OK", [],
+          case #input env of
+              SOME inputStream => TextIO.inputAll inputStream ^ "\r\n"
+            | NONE => "-\r\n"
+          ))
       | _ => HttpServer.ResponseSimple ("200 OK", [], "Hello!\r\n")
   end
 
