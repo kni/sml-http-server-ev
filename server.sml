@@ -191,7 +191,7 @@ fun run (Settings settings) =
                              )
                          end
 
-                     in
+                     val buf =
                        if method = "POST" orelse method = "PUT"
                        then (
                          if findPairValue "expect" headers = SOME "100-continue"
@@ -200,14 +200,17 @@ fun run (Settings settings) =
                          case findPairValue "content-length" headers of
                            SOME cl => (
                              case Int.fromString cl of
-                                 NONE => doResponse stream false false (ResponseSimple ("400", [], "Bad Request\r\n"))
+                                 NONE => (
+                                   doResponse stream false false (ResponseSimple ("400", [], "Bad Request\r\n"));
+                                   buf
+                                 )
                                | SOME cl =>
                                  let
                                    val state = ref NONE
+                                   val _ = readState := ReadContent (callHandlerAnddoResponse, state);
+                                   val buf:string = readContent (callHandlerAnddoResponse, state, buf, SOME cl);
                                  in
-                                   readState := ReadContent (callHandlerAnddoResponse, state);
-                                   readContent (callHandlerAnddoResponse, state, buf, SOME cl);
-                                   true
+                                   buf
                                  end
                            )
                          | NONE => (
@@ -215,17 +218,21 @@ fun run (Settings settings) =
                              then
                                let
                                  val state = ref NONE
+                                 val _ = readState := ReadChunkes (callHandlerAnddoResponse, state);
+                                 val buf:string = readChunkes (callHandlerAnddoResponse, state, buf);
                                in
-                                 readState := ReadChunkes (callHandlerAnddoResponse, state);
-                                 readChunkes (callHandlerAnddoResponse, state, buf);
-                                 true
+                                 buf
                                end
-                             else true
+                             else
+                               buf
                            )
                        )
-                       else callHandlerAnddoResponse NONE
-                       ;
-                       if buf = "" then buf else doRead (stream, buf)
+                       else (
+                         callHandlerAnddoResponse NONE;
+                         buf
+                       )
+                     in
+                       if buf = "" then "" else doRead (stream, buf)
                      end
               )
            | ReadContent (f, state) => readContent (f, state, buf, NONE)
