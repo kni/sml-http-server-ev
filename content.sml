@@ -155,7 +155,12 @@ fun getChunkSize t =
 
 
 
-fun readChunkData buf n i ic =
+fun readChunkData buf n i nl ic =
+ (*
+   n - скільки ще байт потрібно прочитати в цьому чанке
+   i - зсув читання від початку buf
+   nl - прапорець що для завершення чанка ще не вистачає "\r\n" або "\n"
+ *)
  let
    val s = String.size buf
    (* val _ = print ("n=" ^ (Int.toString n) ^ " i=" ^ (Int.toString i) ^ " s=" ^ (Int.toString s) ^ " buf: " ^ buf ^ "\n") *)
@@ -170,12 +175,12 @@ fun readChunkData buf n i ic =
        if c = #"\r"
        then (
          if s >= i + n + 2
-         then (if String.sub (buf, i + n + 1) = #"\n" then (0, 0, String.substring (buf, i + n + 2, s - i - n - 2)) else raise HttpBadChunks )
-         else (n, i, buf)
+         then (if String.sub (buf, i + n + 1) = #"\n" then (0, 0, nl, String.substring (buf, i + n + 2, s - i - n - 2)) else raise HttpBadChunks )
+         else (0, 0, true, String.substring (buf, i + n + 1, s - i - n - 1))
        )
        else if c = #"\n"
-       then (0, 0, String.substring (buf, i + n + 1, s - i - n - 1))
-       else if n = 0 then (0, 0, String.substring (buf, i, s - i)) (* it is delete "\r\n" after size *)
+       then (0, 0, nl, String.substring (buf, i + n + 1, s - i - n - 1))
+       else if n = 0 then (0, 0, false, String.substring (buf, i, s - i)) (* it is delete "\r\n" after size *)
        else raise HttpBadChunks
      end
    else
@@ -183,7 +188,13 @@ fun readChunkData buf n i ic =
        val data = String.substring (buf, i, s - i)
      in
        if String.size data = 0 then () else CS.add ic data;
-       ((n - s + i), 0, "")
+       let
+         val n = n - s + i
+         val nl = if n = 0 then true else false
+           (* true - для завершення чанка ще не вистачає "\r\n" або "\n" *)
+       in
+         (n, 0, nl, "")
+       end
      end
  end
 
@@ -193,41 +204,41 @@ in
 
 fun readChunkes (state, buf) =
   let
-    val (n, i, ic) = case !state of
+    val (n, i, nl, ic) = case !state of
                 NONE =>
                   let
                     val ic = CS.init (String.size buf)
                   in
-                    state := SOME (0, 0, ic);
-                    (0, 0, ic)
+                    state := SOME (0, 0, false, ic);
+                    (0, 0, false, ic)
                   end
-              | SOME (n, i, ic) => (n, i, ic)
+              | SOME (n, i, nl, ic) => (n, i, nl, ic)
 
 
-    fun doit ""  n i = (state := SOME (n, i, ic); (NONE, ""))
-      | doit buf 0 i = (
+    fun doit ""  n i nl = (state := SOME (n, i, nl, ic); (NONE, ""))
+      | doit buf 0 i nl = (
       case getChunkSize buf of
           NONE => if String.size buf > maxChunkSizeEntity then raise HttpBadChunks else
-            ( state := SOME (n, i, ic); (NONE, buf))
+            ( state := SOME (n, i, nl, ic); (NONE, buf))
         | SOME (n, i) =>
           let
-            val (n', i', buf) = readChunkData buf n i ic
+            val (n', i', nl, buf) = readChunkData buf n i nl ic
           in
-            if n = 0
-            then (state := SOME (n', i', ic); (SOME (CS.done ic), buf))
-            else doit buf n' i'
+            if n = 0 orelse nl
+            then (state := SOME (n', i', nl, ic); (SOME (CS.done ic), buf))
+            else doit buf n' i' nl
           end
       )
-      | doit buf n i =
+      | doit buf n i nl =
           let
-            val (n', i', buf) = readChunkData buf n i ic
+            val (n', i', nl, buf) = readChunkData buf n i nl ic
           in
-            if n = 0
-            then (state := SOME (n', i', ic); (SOME (CS.done ic), buf))
-            else doit buf n' i'
+            if n = 0 orelse nl
+            then (state := SOME (n', i', nl, ic); (SOME (CS.done ic), buf))
+            else doit buf n' i' nl
           end
   in
-    doit buf n i
+    doit buf n i nl
   end
 
 
@@ -251,7 +262,7 @@ fun testReadChunkes () =
                       val inputContent = TextIO.inputAll ics
                     in
                       TextIO.closeIn ics;
-                      if inputContent = content andalso buf = tail then print "OK\n" else print "ERROR\n"
+                      if inputContent = content andalso buf = tail then print "OK\n" else print ("ERROR\n" ^ inputContent)
                     end
             end
       in
@@ -265,6 +276,9 @@ fun testReadChunkes () =
     test ["5 chunk-extension \r\n", "Hello\r\n", "0\r\n\r\n"] "Hello" "";
     test ["5\r\nHello\r\n", "A\r\n, Plack!\r\n\r\n", "0\r\n\r\n", "", ""] "Hello, Plack!\r\n" "";
     test ["5\r\nHello\r\nA\r\n, Plack!\r\n\r\n0\r\n\r\nXXXX\n"] "Hello, Plack!\r\n" "XXXX\n";
+
+    test ["5\r\nHello", "\r\n0\r\n\r\n", "", ""] "Hello" "";
+    test ["5\r\nHello\r", "\n0\r\n\r\n", "", ""] "Hello" "";
     ()
   end
 
